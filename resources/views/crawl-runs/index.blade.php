@@ -9,7 +9,10 @@
     <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-2">
             <h1 class="text-2xl font-bold">Crawl Runs — SISTER</h1>
-            <span class="text-sm text-gray-500">{{ $sdmCount }} SDM tersinkron</span>
+            <div class="flex items-center gap-4">
+                <span class="text-sm text-gray-500">{{ $sdmCount }} SDM tersinkron</span>
+                <a href="{{ route('ai-search.index') }}" class="text-sm text-blue-600">Cari Data (AI) &rarr;</a>
+            </div>
         </div>
 
         @if (session('status'))
