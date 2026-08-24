@@ -1,58 +1,83 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# SISTER API Crawler
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel app buat narik data pegawai (SDM) dari **SISTER Web Service** (Kemdiktisaintek) secara massal, disimpan ke database lokal. Terintegrasi ke API sandbox:
 
-## About Laravel
-
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
-
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```
+https://sister-api.kemdiktisaintek.go.id/ws-sandbox.php/1.0
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Cara kerja
 
-## Contributing
+1. **Sync SDM** — narik daftar seluruh pegawai dari `/referensi/sdm`, disimpan sebagai master data di tabel `sdms` (upsert by `id_sdm`, jadi aman dijalankan berkali-kali, gak bikin duplikat).
+2. **Start Run** — pilih 1 atau lebih endpoint (checkbox), lalu tiap SDM di-queue jadi 1 job (`CrawlEndpointJob`) yang hit endpoint tersebut dengan `id_sdm` masing-masing. Job dieksekusi lewat Laravel [job batching](https://laravel.com/docs/queues#job-batching) supaya progress-nya bisa dipantau.
+3. **Live tracking** — halaman detail run nge-poll status tiap 2 detik, nampilin progress bar + status per-SDM (pending/processing/success/failed), mirip halaman build Jenkins.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+Endpoint SISTER yang sudah didukung (lihat [`SisterEndpointRegistry`](app/Services/SisterEndpointRegistry.php)):
 
-## Code of Conduct
+| Endpoint | Model hasil |
+|---|---|
+| `/jabatan_fungsional` | `JabatanFungsional` |
+| `/pendidikan_formal` | `PendidikanFormal` |
+| `/publikasi` (paginated) | `Publikasi` |
+| `/sertifikasi_dosen` | `SertifikasiDosen` |
+| `/sertifikasi_profesi` | `SertifikasiProfesi` |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Nambah endpoint baru cukup: 1 service class (extend `SisterEndpointService`), 1 model+migration (kolom disamain nama field-nya dengan response API), lalu daftarkan di registry — job & controller-nya generik, gak perlu ditulis ulang.
 
-## Security Vulnerabilities
+## Arsitektur singkat
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```
+routes/api.php   → SisterAuthController, SisterReferensiController   (akses API SISTER langsung)
+routes/web.php   → CrawlRunController                                (UI crawl + live tracking)
 
-## License
+app/Services/
+  SisterAuthService          → POST /authorize, cache token 55 menit
+  SisterEndpointService      → base class, HTTP GET + bearer token
+  Sister*Service (x5)        → 1 per endpoint SISTER
+  SisterEndpointRegistry     → mapping endpoint key → service + model
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+app/Jobs/CrawlEndpointJob.php → 1 job generik, dipakai semua endpoint lewat registry
+```
+
+## Setup
+
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+```
+
+Isi kredensial SISTER sandbox di `.env`:
+
+```env
+SISTER_API_HOST=https://sister-api.kemdiktisaintek.go.id/ws-sandbox.php/1.0
+SISTER_API_USERNAME=...
+SISTER_API_PASSWORD=...
+SISTER_API_ID_PENGGUNA=...
+```
+
+Jalankan lewat [Sail](https://laravel.com/docs/sail):
+
+```bash
+sail up -d
+sail artisan migrate
+```
+
+Buka `http://localhost:8082/crawl-runs`, klik **Sync SDM**, pilih endpoint, klik **Start Run**.
+
+> Queue worker (job batching) jalan otomatis di container `queue` (`restart: unless-stopped`) — gak perlu dijalankan manual. Setiap ubah kode job/service, restart workernya: `sail artisan queue:restart`.
+
+## Stack
+
+- **Laravel 13** + PHP 8.5, disajikan lewat **[Octane](https://laravel.com/docs/octane) + FrankenPHP** (bukan `artisan serve` default Sail) buat throughput lebih tinggi saat crawl ratusan/ribuan SDM.
+- **PostgreSQL** (data), **Redis** (cache/queue driver tersedia, default queue pakai `database`).
+- **Laravel job batching** buat tracking progress crawl, tanpa perlu WebSocket — UI cukup polling.
+- **[Laravel Boost](https://laravel.com/docs/ai)** terpasang sebagai dev-tool: MCP server yang kasih AI coding agent (Claude Code) akses introspeksi DB/routes/tinker + dokumentasi Laravel versi-spesifik. Lihat `CLAUDE.md` & `.mcp.json`.
+
+## Development
+
+```bash
+sail artisan tinker          # eksplorasi data
+sail artisan queue:work      # kalau mau jalanin worker manual (di luar container queue)
+sail artisan octane:start --server=frankenphp --watch   # dev dengan auto-reload
+```
