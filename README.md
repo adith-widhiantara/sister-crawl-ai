@@ -12,6 +12,7 @@ https://sister-api.kemdiktisaintek.go.id/ws-sandbox.php/1.0
 2. **Start Run** — pilih 1 atau lebih endpoint (checkbox), lalu tiap SDM di-queue jadi 1 job (`CrawlEndpointJob`) yang hit endpoint tersebut dengan `id_sdm` masing-masing. Job dieksekusi lewat Laravel [job batching](https://laravel.com/docs/queues#job-batching) supaya progress-nya bisa dipantau.
 3. **Live tracking** — halaman detail run nge-poll status tiap 2 detik, nampilin progress bar + status per-SDM (pending/processing/success/failed), mirip halaman build Jenkins.
 4. **Cari Data (AI)** — halaman `/ai-search` buat tanya data hasil crawl pakai bahasa natural (misal *"cari dosen dengan publikasi lebih dari 5"*), dijawab AI lewat tool-calling ke database, hasil tabel-nya dinamis sesuai pertanyaan.
+5. **Log request/response SISTER API** — semua call ke SISTER API (auth, referensi/sdm, jabatan_fungsional, dst) otomatis kecatat ke tabel `sister_api_logs` (method, url, request/response header, request/response body, status, durasi) — kredensial (`password`, bearer token) di-redact sebelum disimpan. Berguna buat debug kalau ada crawl yang gagal atau data yang aneh, tanpa perlu ubah kode service manapun.
 
 Endpoint SISTER yang sudah didukung (lihat [`SisterEndpointRegistry`](app/Services/SisterEndpointRegistry.php)):
 
@@ -37,6 +38,7 @@ app/Services/
   SisterEndpointService      → base class, HTTP GET + bearer token
   Sister*Service (x5)        → 1 per endpoint SISTER
   SisterEndpointRegistry     → mapping endpoint key → service + model
+  SisterApiLoggingMiddleware → Guzzle global middleware, log semua request/response ke sister_api_logs
 
 app/Jobs/CrawlEndpointJob.php → 1 job generik, dipakai semua endpoint lewat registry
 
@@ -78,6 +80,8 @@ Buka:
 > Queue worker (job batching) jalan otomatis di container `queue` (`restart: unless-stopped`) — gak perlu dijalankan manual.
 >
 > Defaultnya jalan **4 worker paralel** (bukan 1 per 1), diatur lewat `QUEUE_WORKERS` di `.env`. Tiap worker adalah proses `queue:work` terpisah yang ambil job dari tabel `jobs` — aman dipakai bareng-bareng karena driver `database` mengunci (`reserved_at`) tiap job saat diambil, jadi gak ada 2 worker yang ngerjain SDM yang sama. Mau nambah/kurangin jumlah worker: ubah `QUEUE_WORKERS` di `.env` lalu `docker compose up -d --scale queue=$QUEUE_WORKERS queue` (atau langsung `sail up -d --scale queue=4`), atau restart container biar `deploy.replicas` di `compose.yaml` yang baca ulang env-nya.
+
+Mau share instance lokal keluar (misal lewat [ngrok](https://ngrok.com/)) buat testing? Tinggal jalanin `ngrok http 8082` — app-nya udah trust reverse proxy header (`X-Forwarded-Proto`), jadi link yang di-generate otomatis ikut `https://` sesuai domain tunnel-nya, gak perlu ubah `APP_URL`.
 
 ## Stack
 
