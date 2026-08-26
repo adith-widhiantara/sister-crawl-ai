@@ -13,7 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Trust the reverse proxy (ngrok, etc.) so X-Forwarded-Proto is honored —
+        // otherwise route()/url() generate http:// links even when accessed over https,
+        // which browsers block as mixed content when fetched from JS.
+        $middleware->trustProxies(at: '*');
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
