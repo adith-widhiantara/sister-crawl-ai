@@ -28,7 +28,7 @@ class SisterApiLoggingTest extends TestCase
             ->withToken('secret-token')
             ->get('/jabatan_fungsional', ['id_sdm' => 'abc']);
 
-        $response->assertOk();
+        $this->assertTrue($response->successful());
         // Middleware must not break the caller's ability to read the response normally.
         $this->assertSame(['status' => 'ok'], $response->json());
 
