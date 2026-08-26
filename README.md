@@ -76,6 +76,8 @@ Buka:
 - `http://localhost:8082/ai-search` — tanya data pakai bahasa natural.
 
 > Queue worker (job batching) jalan otomatis di container `queue` (`restart: unless-stopped`) — gak perlu dijalankan manual.
+>
+> Defaultnya jalan **4 worker paralel** (bukan 1 per 1), diatur lewat `QUEUE_WORKERS` di `.env`. Tiap worker adalah proses `queue:work` terpisah yang ambil job dari tabel `jobs` — aman dipakai bareng-bareng karena driver `database` mengunci (`reserved_at`) tiap job saat diambil, jadi gak ada 2 worker yang ngerjain SDM yang sama. Mau nambah/kurangin jumlah worker: ubah `QUEUE_WORKERS` di `.env` lalu `docker compose up -d --scale queue=$QUEUE_WORKERS queue` (atau langsung `sail up -d --scale queue=4`), atau restart container biar `deploy.replicas` di `compose.yaml` yang baca ulang env-nya.
 
 ## Stack
 

@@ -29,6 +29,8 @@ services:
         image: sail-8.5/app
         entrypoint: ['php', '/var/www/html/artisan', 'queue:work', '--tries=3']
         restart: unless-stopped
+        deploy:
+            replicas: ${QUEUE_WORKERS:-4}
         environment:
             WWWUSER: '${WWWUSER}'
             LARAVEL_SAIL: 1
