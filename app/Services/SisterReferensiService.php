@@ -20,6 +20,7 @@ class SisterReferensiService
     {
         $response = Http::baseUrl(config('services.sister.host'))
             ->withToken($this->authService->getCachedToken())
+            ->timeout(120) // /referensi/sdm balikin seluruh pegawai sekaligus, bisa lambat
             ->get('/referensi/sdm', $filters)
             ->throw();
 
